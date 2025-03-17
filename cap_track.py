@@ -9,27 +9,18 @@ from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn, nsdecls
+from dotenv import load_dotenv
 import streamlit as st
 from collections import defaultdict
 
-# Get Odoo credentials from Streamlit secrets
-def get_odoo_credentials():
-    """Get Odoo credentials from Streamlit secrets or fallback to environment variables."""
-    if "odoo" in st.secrets:
-        return (
-            st.secrets["odoo"].get("ODOO_URL", ""),
-            st.secrets["odoo"].get("ODOO_DB", ""),
-            st.secrets["odoo"].get("ODOO_USERNAME", ""),
-            st.secrets["odoo"].get("ODOO_PASSWORD", "")
-        )
-    else:
-        # Fallback to environment variables
-        return (
-            os.getenv("ODOO_URL", ""),
-            os.getenv("ODOO_DB", ""),
-            os.getenv("ODOO_USERNAME", ""),
-            os.getenv("ODOO_PASSWORD", "")
-        )
+# Load environment variables from .env file
+load_dotenv()
+
+# Odoo credentials
+ODOO_URL = st.secrets["odoo"]["ODOO_URL"]
+ODOO_DB = st.secrets["odoo"]["ODOO_DB"]
+ODOO_USERNAME = st.secrets["odoo"]["ODOO_USERNAME"]
+ODOO_PASSWORD = st.secrets["odoo"]["ODOO_PASSWORD"]
 
 def set_collapsible(paragraph):
     """
@@ -79,25 +70,10 @@ def set_column_widths(table, widths):
 
 def authenticate_odoo():
     """Authenticate with Odoo and return UID, models object."""
-    # Get credentials
-    ODOO_URL, ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD = get_odoo_credentials()
-    
-    # Check if credentials are available
-    if not ODOO_URL or not ODOO_DB or not ODOO_USERNAME or not ODOO_PASSWORD:
-        st.error("Odoo credentials not properly configured. Please check your secrets.toml file.")
-        st.stop()
-    
-    try:
-        common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
-        uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
-        if not uid:
-            st.error("Failed to authenticate with Odoo. Please check your credentials.")
-            st.stop()
-        models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
-        return uid, models
-    except Exception as e:
-        st.error(f"Error connecting to Odoo: {str(e)}")
-        st.stop()
+    common = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/common")
+    uid = common.authenticate(ODOO_DB, ODOO_USERNAME, ODOO_PASSWORD, {})
+    models = xmlrpc.client.ServerProxy(f"{ODOO_URL}/xmlrpc/2/object")
+    return uid, models
 
 def get_sunday_friday_range():
     """Returns (start_of_week, end_of_week) for the current work week (Sunday–Friday)."""
@@ -111,9 +87,6 @@ def get_sunday_friday_range():
 
 def get_designer_ids_from_planning(models, uid, start_date, end_date):
     """Queries planning.slot for the given date range and returns IDs of designers."""
-    # Get credentials
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     slots = models.execute_kw(
         ODOO_DB, uid, ODOO_PASSWORD,
         'planning.slot', 'search_read',
@@ -137,8 +110,6 @@ def get_designer_ids_from_planning(models, uid, start_date, end_date):
 
 def read_employee_info(models, uid, employee_ids):
     """Retrieves full employee records for the given IDs."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     if not employee_ids:
         return []
     return models.execute_kw(
@@ -150,8 +121,6 @@ def read_employee_info(models, uid, employee_ids):
 
 def get_all_timesheet_hours(models, uid, designer_ids, start_date, end_date):
     """Retrieves timesheet hours for the given designer IDs."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     if not designer_ids:
         return {}
     timesheets = models.execute_kw(
@@ -172,8 +141,6 @@ def get_all_timesheet_hours(models, uid, designer_ids, start_date, end_date):
 
 def get_all_scheduled_data(models, uid, designer_ids, start_date, end_date):
     """Retrieves scheduling data (hours and projects) from planning.slot."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     if not designer_ids:
         return {}
     slots = models.execute_kw(
@@ -204,8 +171,6 @@ def get_all_scheduled_data(models, uid, designer_ids, start_date, end_date):
 
 def get_subtask_service_categories(models, uid, designer_ids, start_date, end_date):
     """For planning slots with subtask references, retrieves the service category."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     if not designer_ids:
         return {}
     main_slots = models.execute_kw(
@@ -254,8 +219,6 @@ def get_subtask_service_categories(models, uid, designer_ids, start_date, end_da
 
 def get_parent_task_due_dates(models, uid, designer_ids, start_date, end_date):
     """For planning slots with parent task references, retrieves and converts the deadline."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     if not designer_ids:
         return {}
     main_slots = models.execute_kw(
@@ -311,8 +274,6 @@ def get_parent_task_due_dates(models, uid, designer_ids, start_date, end_date):
 
 def get_project_breakdown(models, uid, designer_ids, start_date, end_date):
     """Builds a breakdown for each employee: {emp_id: {project_name: {project_type: count, ...}}}."""
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     slots = models.execute_kw(
         ODOO_DB, uid, ODOO_PASSWORD,
         'planning.slot', 'search_read',
@@ -460,8 +421,6 @@ def get_deadlines_for_week(models, uid, designer_ids, start_date, end_date):
     Returns a list of dicts with keys: 'designer', 'project', 'project_type', 'deadline'
     for deadlines within the next 7 days.
     """
-    _, ODOO_DB, _, ODOO_PASSWORD = get_odoo_credentials()
-    
     slots = models.execute_kw(
         ODOO_DB, uid, ODOO_PASSWORD,
         'planning.slot', 'search_read',
@@ -545,7 +504,6 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
     heading_paragraph = document.add_heading("Designer Capacity and Availability", 1)
     set_collapsible(heading_paragraph)
     document.styles['Heading 1'].font.size = Pt(18)
-    # Set Heading 1 color to black.
     document.styles['Heading 1'].font.color.rgb = RGBColor(0x00, 0x00, 0x00)
     
     # Set base style.
@@ -554,20 +512,19 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
     style.font.size = Pt(11)
     
     # ----------------- Create a combined summary table at the top -----------------
-    # Compute Capacity Summary.
-    total_available_hours = sum(info['capacity'] for info in designer_info_list)
     total_designers = len(designer_info_list)
-    fully_count = sum(1 for info in designer_info_list if info['guess'] == "Fully Available")
-    partially_count = sum(1 for info in designer_info_list if info['guess'] == "Partially Available")
-    not_count = sum(1 for info in designer_info_list if info['guess'] == "Not Available")
-    fully_pct = (fully_count / total_designers) * 100 if total_designers else 0
-    partially_pct = (partially_count / total_designers) * 100 if total_designers else 0
-    not_pct = (not_count / total_designers) * 100 if total_designers else 0
+    total_available_hours = sum(info['capacity'] for info in designer_info_list)
+    # Count designers with any available hours.
+    available_designers = len([info for info in designer_info_list if info['capacity'] > 0])
+    # Assuming each designer works a 40-hour week.
+    total_possible_hours = total_designers * 40
+    total_assigned_hours = total_possible_hours - total_available_hours
+    utilization = (total_assigned_hours / total_possible_hours * 100) if total_possible_hours else 0
+
     capacity_summary = (
-        f"Capacity Summary: Total Available Hours: {total_available_hours:.1f} | "
-        f"Fully: {fully_count} ({fully_pct:.1f}%) | "
-        f"Partially: {partially_count} ({partially_pct:.1f}%) | "
-        f"Not: {not_count} ({not_pct:.1f}%)"
+        f"Capacity Summary: Available Designers: {available_designers} | "
+        f"Available Hours: {total_available_hours:.1f} | "
+        f"Utilization: {utilization:.1f}%"
     )
     
     # Compute Aggregated Project Breakdown Summary.
@@ -609,10 +566,10 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
     document.add_paragraph("")  # Add a spacer paragraph
     
     # ----------------- Main Designer Capacity Table -----------------
-    table = document.add_table(rows=1, cols=6)
+    headers = ["Designer", "Available Hours", "Projects", "Project Type", "Deadline"]
+    table = document.add_table(rows=1, cols=len(headers))
     table.style = "Table Grid"
     hdr_cells = table.rows[0].cells
-    headers = ["Designer", "Available Hours", "Availability", "Projects", "Project Type", "Deadline"]
     for i, header in enumerate(headers):
         hdr_cells[i].text = header
         para = hdr_cells[i].paragraphs[0]
@@ -621,20 +578,16 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
             run.bold = True
         set_cell_shading(hdr_cells[i], fill="D9E1F2")
         set_cell_margin(hdr_cells[i], margin=100)
-    # Set uniform column widths.
-    set_column_widths(table, [Inches(1.5)] * 6)
+    set_column_widths(table, [Inches(1.5)] * len(headers))
     
     for info in designer_info_list:
         row_cells = table.add_row().cells
         row_cells[0].text = info['name']
         row_cells[1].text = f"{info['capacity']:.1f}"
-        avail_status = info['guess']
-        dot = "🟢" if avail_status == "Fully Available" else ("🟡" if avail_status == "Partially Available" else "🔴")
-        row_cells[2].text = f"{avail_status} {dot}"
-        row_cells[3].text = ", ".join(sorted(info.get('projects', []))) or "None"
-        row_cells[4].text = ", ".join(sorted(info.get('subtask_categories', []))) or "None"
+        row_cells[2].text = ", ".join(sorted(info.get('projects', []))) or "None"
+        row_cells[3].text = ", ".join(sorted(info.get('subtask_categories', []))) or "None"
         # Format deadline cell with red font for urgent deadlines.
-        deadline_cell = row_cells[5]
+        deadline_cell = row_cells[4]
         para = deadline_cell.paragraphs[0]
         para.text = ""
         deadlines = sorted(info.get('parent_deadlines', []))
@@ -655,7 +608,6 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
     # ----------------- Aggregated Project Breakdown Section -----------------
     agg_heading = document.add_heading("Aggregated Project Breakdown", 1)
     set_collapsible(agg_heading)
-    # Create a table with 3 columns: Project Type, Breakdown, Total.
     agg_table = document.add_table(rows=1, cols=3)
     agg_table.style = "Table Grid"
     agg_hdr_cells = agg_table.rows[0].cells
@@ -670,7 +622,6 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
         set_cell_shading(cell, fill="D9E1F2")
         set_cell_margin(cell, margin=100)
     set_column_widths(agg_table, [Inches(1.5), Inches(3.5), Inches(1)])
-    # For each project type, combine all requests into one cell.
     for project_type, projects in aggregated_breakdown.items():
         breakdown_details = ", ".join(f"{proj} ({cnt})" for proj, cnt in projects.items())
         total_count = sum(projects.values())
@@ -726,227 +677,90 @@ def generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregate
     buf.seek(0)
     return buf
 
+
 def main():
-    st.set_page_config(
-        page_title="Designer Capacity & Availability Tracker",
-        page_icon="📊",
-        layout="wide"
+    st.title("Designer Capacity & Availability Tracker")
+    st.write(
+        "This app retrieves data for the current work week and generates a polished Word report. "
+        "The report includes a detailed table of designer capacity and availability, "
+        "an aggregated project breakdown, and a deadline breakdown section with a pie chart."
     )
     
-    st.title("Designer Capacity & Availability Tracker")
-    
-    # Add information about secrets in sidebar
-    with st.sidebar:
-        st.subheader("About this app")
-        st.markdown(
-            "This app retrieves data for the current work week and generates a polished Word report. "
-            "The report includes a detailed table of designer capacity and availability, "
-            "an aggregated project breakdown, and a deadline breakdown section with a pie chart."
-        )
-        
-        st.subheader("Configuration")
-        if "odoo" not in st.secrets:
-            st.error("Odoo credentials not configured!")
-            with st.expander("How to configure"):
-                st.markdown("""
-                To configure this app, create a `secrets.toml` file with:
-                
-                ```toml
-                [odoo]
-                ODOO_URL = "https://your-odoo-instance.com"
-                ODOO_DB = "your-database-name"
-                ODOO_USERNAME = "your-username"
-                ODOO_PASSWORD = "your-password"
-                ```
-                
-                When deploying to Streamlit Cloud, add these as secrets in the app settings.
-                """)
-        else:
-            st.success("Odoo credentials configured!")
-    
-    # Check if credentials are available before showing the Run button
-    if "odoo" not in st.secrets and not (os.getenv("ODOO_URL") and os.getenv("ODOO_DB") and 
-                                         os.getenv("ODOO_USERNAME") and os.getenv("ODOO_PASSWORD")):
-        st.error("Odoo credentials not found. Please configure them in your secrets.toml file or environment variables.")
-        st.stop()
-    
-    if st.button("Run Analysis", type="primary"):
-        try:
-            with st.spinner("Authenticating with Odoo..."):
-                uid, models = authenticate_odoo()
-                
-            start_of_week, end_of_week = get_sunday_friday_range()
-            start_date_str = start_of_week.strftime("%Y-%m-%d")
-            end_date_str = end_of_week.strftime("%Y-%m-%d")
-            
-            with st.spinner(f"Retrieving designers for {start_date_str} to {end_date_str}..."):
-                relevant_designer_ids = get_designer_ids_from_planning(models, uid, start_date_str, end_date_str)
-                if not relevant_designer_ids:
-                    st.warning("No designers found in planning slots for this week.")
-                    return
-                    
-            progress_bar = st.progress(0)
-            progress_text = st.empty()
-            
-            # Update progress
-            progress_text.text("Reading employee info...")
-            progress_bar.progress(10)
+    if st.button("Run Analysis"):
+        with st.spinner("Authenticating with Odoo..."):
+            uid, models = authenticate_odoo()
+        start_of_week, end_of_week = get_sunday_friday_range()
+        start_date_str = start_of_week.strftime("%Y-%m-%d")
+        end_date_str = end_of_week.strftime("%Y-%m-%d")
+        with st.spinner(f"Retrieving designers for {start_date_str} to {end_date_str}..."):
+            relevant_designer_ids = get_designer_ids_from_planning(models, uid, start_date_str, end_date_str)
+            if not relevant_designer_ids:
+                st.warning("No designers found in planning slots for this week.")
+                return
+        with st.spinner("Reading employee info..."):
             employees = read_employee_info(models, uid, relevant_designer_ids)
-            
-            employee_dict = {emp['id']: emp for emp in employees}
-            designer_ids = list(employee_dict.keys())
-            
-            # Update progress
-            progress_text.text("Fetching timesheet data...")
-            progress_bar.progress(20)
+        employee_dict = {emp['id']: emp for emp in employees}
+        designer_ids = list(employee_dict.keys())
+        with st.spinner("Fetching timesheet data..."):
             timesheet_dict = get_all_timesheet_hours(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            # Update progress
-            progress_text.text("Fetching scheduled data...")
-            progress_bar.progress(30)
+        with st.spinner("Fetching scheduled data..."):
             scheduled_dict = get_all_scheduled_data(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            # Update progress
-            progress_text.text("Fetching subtask service categories...")
-            progress_bar.progress(40)
+        with st.spinner("Fetching subtask service categories..."):
             subtask_cat_dict = get_subtask_service_categories(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            # Update progress
-            progress_text.text("Fetching parent task deadlines...")
-            progress_bar.progress(50)
+        with st.spinner("Fetching parent task deadlines..."):
             parent_dd_dict = get_parent_task_due_dates(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            # Update progress
-            progress_text.text("Fetching project breakdown...")
-            progress_bar.progress(60)
+        with st.spinner("Fetching project breakdown..."):
             project_breakdown_dict = get_project_breakdown(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            # Update progress
-            progress_text.text("Processing data...")
-            progress_bar.progress(70)
-            aggregated_breakdown = aggregate_project_breakdowns(project_breakdown_dict)
-            aggregated_deadlines = []
-            for emp_id in designer_ids:
-                aggregated_deadlines.extend(list(parent_dd_dict.get(emp_id, set())))
-            
-            # Update progress
-            progress_text.text("Getting deadlines for the week...")
-            progress_bar.progress(80)
-            deadlines_details = get_deadlines_for_week(models, uid, designer_ids, start_date_str, end_date_str)
-            
-            designer_info_list = []
-            for emp_id in designer_ids:
-                emp = employee_dict.get(emp_id)
-                if not emp:
-                    continue
-                name = emp.get('name', 'Unknown')
-                timesheet_hours = timesheet_dict.get(emp_id, 0.0)
-                sched = scheduled_dict.get(emp_id, {'hours': 0.0, 'projects': set()})
-                scheduled_hours = sched['hours']
-                projects = sched['projects']
-                sub_cats = subtask_cat_dict.get(emp_id, set())
-                parent_dds = parent_dd_dict.get(emp_id, set())
-                capacity, guess = get_availability_guess_coded(name, timesheet_hours, scheduled_hours)
-                designer_info_list.append({
-                    'name': name,
-                    'capacity': capacity,
-                    'guess': guess,
-                    'projects': projects,
-                    'subtask_categories': sub_cats,
-                    'parent_deadlines': parent_dds
-                })
-            
-            designer_info_list.sort(key=lambda x: x['name'].lower())
-            
-            # Update progress
-            progress_text.text("Generating Word document...")
-            progress_bar.progress(90)
+        aggregated_breakdown = aggregate_project_breakdowns(project_breakdown_dict)
+        aggregated_deadlines = []
+        for emp_id in designer_ids:
+            aggregated_deadlines.extend(list(parent_dd_dict.get(emp_id, set())))
+        deadlines_details = get_deadlines_for_week(models, uid, designer_ids, start_date_str, end_date_str)
+        designer_info_list = []
+        for emp_id in designer_ids:
+            emp = employee_dict.get(emp_id)
+            if not emp:
+                continue
+            name = emp.get('name', 'Unknown')
+            timesheet_hours = timesheet_dict.get(emp_id, 0.0)
+            sched = scheduled_dict.get(emp_id, {'hours': 0.0, 'projects': set()})
+            scheduled_hours = sched['hours']
+            projects = sched['projects']
+            sub_cats = subtask_cat_dict.get(emp_id, set())
+            parent_dds = parent_dd_dict.get(emp_id, set())
+            capacity, guess = get_availability_guess_coded(name, timesheet_hours, scheduled_hours)
+            designer_info_list.append({
+                'name': name,
+                'capacity': capacity,
+                'guess': guess,
+                'projects': projects,
+                'subtask_categories': sub_cats,
+                'parent_deadlines': parent_dds
+            })
+        designer_info_list.sort(key=lambda x: x['name'].lower())
+        with st.spinner("Generating Word document..."):
             doc_buffer = generate_better_word_doc(designer_info_list, aggregated_breakdown, aggregated_deadlines, deadlines_details)
-            
-            # Final progress update
-            progress_text.text("Analysis complete!")
-            progress_bar.progress(100)
-            
-            st.success(f"Analysis complete for {start_date_str} to {end_date_str}!")
-            
-            # Display download button
-            st.download_button(
-                label="📥 Download Capacity Tracker Report",
-                data=doc_buffer,
-                file_name=f"Capacity_Tracker_{start_date_str}_to_{end_date_str}.docx",
-                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                use_container_width=True
-            )
-            
-            # Display preview
-            with st.expander("📊 Capacity Tracker Preview", expanded=True):
-                st.markdown(f"### Date Range: {start_date_str} to {end_date_str}")
-                
-                # Create columns for metrics
-                col1, col2, col3 = st.columns(3)
-                
-                # Calculate metrics
-                total_available_hours = sum(info['capacity'] for info in designer_info_list)
-                total_designers = len(designer_info_list)
-                fully_count = sum(1 for info in designer_info_list if info['guess'] == "Fully Available")
-                partially_count = sum(1 for info in designer_info_list if info['guess'] == "Partially Available")
-                not_count = sum(1 for info in designer_info_list if info['guess'] == "Not Available")
-                
-                # Display metrics
-                col1.metric("Total Available Hours", f"{total_available_hours:.1f}")
-                col2.metric("Total Designers", total_designers)
-                col3.metric("Availability", f"🟢 {fully_count} | 🟡 {partially_count} | 🔴 {not_count}")
-                
-                # Display designer information
-                st.markdown("### Designer Details")
-                for info in designer_info_list:
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    
-                    avail_emoji = "🟢" if info['guess'] == "Fully Available" else ("🟡" if info['guess'] == "Partially Available" else "🔴")
-                    
-                    col1.markdown(f"**{info['name']}**")
-                    col2.markdown(f"**Available Hours:** {info['capacity']:.1f}")
-                    col3.markdown(f"**Availability:** {avail_emoji} {info['guess']}")
-                    
-                    # Projects and categories
-                    projects_str = ", ".join(sorted(info['projects'])) if info['projects'] else "None"
-                    categories_str = ", ".join(sorted(info['subtask_categories'])) if info['subtask_categories'] else "None"
-                    
-                    st.markdown(f"**Projects:** {projects_str}")
-                    st.markdown(f"**Project Types:** {categories_str}")
-                    
-                    # Deadlines with color coding
-                    deadlines = sorted(info.get('parent_deadlines', []))
-                    if deadlines:
-                        deadline_html = "<strong>Deadlines:</strong> "
-                        for i, d_str in enumerate(deadlines):
-                            try:
-                                d_dt = pd.to_datetime(d_str)
-                                delta = (d_dt - pd.Timestamp.now()).days
-                                if 0 <= delta < 7:
-                                    deadline_html += f"<span style='color:red'>{d_str}</span>"
-                                else:
-                                    deadline_html += d_str
-                            except:
-                                deadline_html += d_str
-                                
-                            if i < len(deadlines) - 1:
-                                deadline_html += ", "
-                        
-                        st.markdown(deadline_html, unsafe_allow_html=True)
-                    else:
-                        st.markdown("**Deadlines:** None")
-                        
-                    st.markdown("---")
-                
-                # Display the deadline pie chart
-                st.subheader("Deadline Distribution")
-                st.image(create_deadline_pie_chart(aggregated_deadlines))
-        
-        except Exception as e:
-            st.error(f"An error occurred: {str(e)}")
-            import traceback
-            st.code(traceback.format_exc())
+        st.success(f"Analysis complete for {start_date_str} to {end_date_str}!")
+        st.download_button(
+            label="Download Capacity Tracker",
+            data=doc_buffer,
+            file_name="Capacity_Tracker.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+        st.header("Capacity Tracker Preview")
+        st.write(f"**Date Range:** {start_date_str} to {end_date_str}")
+        for info in designer_info_list:
+            st.subheader(info['name'])
+            st.write(f"**Available Hours:** {info['capacity']:.1f}, **Availability:** {info['guess']}")
+            st.write(f"**Projects:** {', '.join(sorted(info['projects'])) if info['projects'] else 'None'}")
+            st.write(f"**Project Type:** {', '.join(sorted(info['subtask_categories'])) if info['subtask_categories'] else 'None'}")
+            st.write(f"**Deadline:** {', '.join(sorted(info['parent_deadlines'])) if info['parent_deadlines'] else 'None'}")
+            st.write("---")
+        st.subheader("Aggregated Project Breakdown")
+        agg_total, agg_breakdown_text = format_project_breakdown_for_employee(aggregated_breakdown)
+        st.write(f"Working on {agg_total} project entries: {agg_breakdown_text}")
+        st.subheader("Deadline Breakdown (Pie Chart)")
+        st.image(create_deadline_pie_chart(aggregated_deadlines), width=500)
 
 if __name__ == "__main__":
     main()
